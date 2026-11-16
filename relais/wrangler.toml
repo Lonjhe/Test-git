@@ -1,0 +1,5 @@
+# Pour un déploiement en ligne de commande (facultatif) : npx wrangler deploy
+# puis : npx wrangler secret put CLE
+name = "seance-relais"
+main = "worker.js"
+compatibility_date = "2026-01-01"

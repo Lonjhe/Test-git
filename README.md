@@ -123,15 +123,21 @@ flèche est pressée, elle repasse en mode télécommande.
 | --- | --- | --- |
 | Installation | aucune | Node.js sur un ordinateur de la maison |
 | Qui se connecte au fournisseur | votre navigateur, directement | le serveur Séance, qui relaie les flux |
-| Fournisseurs compatibles | ceux accessibles en **HTTPS** et qui acceptent les appels venant d'un site web | tous |
+| Fournisseurs compatibles | ceux accessibles en **HTTPS** et qui acceptent les appels venant d'un site web ; les autres via un [relais](relais/README.md) | tous |
 | Identifiants, favoris, reprises | conservés dans le navigateur de chaque appareil | conservés sur le serveur, partagés entre tous les écrans |
 
 La version en ligne n'a pas de serveur : les navigateurs interdisent à une page
 sécurisée (HTTPS) d'appeler une adresse en HTTP, et exigent que le site appelé
 l'autorise. Beaucoup de fournisseurs IPTV ne proposent que du HTTP ; dans ce cas la
-connexion ou la lecture échoue en ligne (Séance l'explique) et il faut passer par
-l'installation chez soi, qui n'a pas ces limites. Séance essaie d'elle-même la
-variante HTTPS de l'adresse que vous saisissez.
+connexion échoue en ligne avec le message « Le navigateur n'a pas pu joindre ce
+serveur ». Deux solutions :
+
+- **installer un relais** : un petit programme gratuit, sur votre compte Cloudflare,
+  qui fait l'intermédiaire entre la page et votre fournisseur. Le
+  [guide](relais/README.md) prend une dizaine de minutes ;
+- **installer Séance chez vous**, qui n'a aucune de ces limites.
+
+Séance essaie d'elle-même la variante HTTPS de l'adresse que vous saisissez.
 
 ## Bon à savoir
 
@@ -175,6 +181,7 @@ shared/     logique commune au serveur et au navigateur
 public/     interface (JavaScript natif, sans étape de build)
   js/focus.js  navigation à la télécommande          js/views/     un fichier par écran
   js/local.js  « serveur » embarqué de la version en ligne
+relais/     relais HTTPS pour la version en ligne (Cloudflare Worker) et son guide
 scripts/    construction de la démonstration statique (GitHub Pages)
 test/       tests (node --test)
 ```

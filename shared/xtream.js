@@ -34,11 +34,16 @@ export function directCandidates(url, pageProtocol) {
 }
 
 export class Xtream {
-  constructor(source, { headers = {} } = {}) {
+  /**
+   * headers : en-têtes ajoutés aux appels (le serveur y met son User-Agent).
+   * wrap : transforme l'adresse appelée — la version en ligne s'en sert pour passer par un relais.
+   */
+  constructor(source, { headers = {}, wrap = (url) => url } = {}) {
     this.base = normalizeBase(source.url);
     this.username = source.username;
     this.password = source.password;
     this.headers = headers;
+    this.wrap = wrap;
   }
 
   async call(action, params = {}, timeout = 120_000) {
@@ -47,7 +52,7 @@ export class Xtream {
     u.searchParams.set('password', this.password);
     if (action) u.searchParams.set('action', action);
     for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-    const res = await fetch(u, { headers: this.headers, signal: AbortSignal.timeout(timeout) });
+    const res = await fetch(this.wrap(u.href), { headers: this.headers, signal: AbortSignal.timeout(timeout) });
     if (!res.ok) throw new Error(`Le serveur IPTV a répondu ${res.status}`);
     const text = await res.text();
     try {

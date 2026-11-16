@@ -22,6 +22,7 @@ export function settings(ctx) {
   const catalogEl = h('div');
   const tmdbEl = h('div');
   const optionsEl = h('div');
+  const relayEl = h('div');
 
   root.append(
     welcome
@@ -31,10 +32,11 @@ export function settings(ctx) {
       h('h3', {}, 'Version en ligne : votre navigateur se connecte directement à votre fournisseur'),
       h('p', { class: 'hint' }, 'Vos identifiants et votre catalogue restent dans ce navigateur ; rien n\'est envoyé ailleurs qu\'à votre fournisseur. '
         + 'Cela ne fonctionne que si celui-ci est accessible en HTTPS et accepte les connexions venant d\'un site web — ce n\'est pas le cas de tous.'),
-      h('p', { class: 'hint' }, 'Si la connexion ou la lecture échoue, installez Séance sur un ordinateur de la maison : son serveur fait l\'intermédiaire et fonctionne avec tous les fournisseurs.'),
+      h('p', { class: 'hint' }, 'Si la connexion ou la lecture échoue, deux solutions : configurer un relais (rubrique « Relais » ci-dessous), ou installer Séance sur un ordinateur de la maison, dont le serveur fait l\'intermédiaire.'),
       h('a', { class: 'btn', href: 'https://github.com/Lonjhe/Test-git#démarrer', target: '_blank', rel: 'noopener noreferrer', dataset: { fkey: 'install' } }, 'Installer Séance chez moi'),
     )) : null,
     h('section', {}, welcome ? null : h('h2', {}, 'Sources'), sourcesEl, formEl),
+    isStatic ? h('section', {}, h('h2', {}, 'Relais'), relayEl) : null,
     welcome ? null : h('section', {}, h('h2', {}, 'Catalogue'), catalogEl),
     welcome ? null : h('section', {}, h('h2', {}, 'Fiches et genres (TMDB)'), tmdbEl),
     welcome ? null : h('section', {}, h('h2', {}, 'Options'), optionsEl),
@@ -139,6 +141,7 @@ export function settings(ctx) {
     if (welcome) return;
     const c = s.catalog;
     const keep = document.activeElement?.dataset?.fkey;
+    if (isStatic) paintRelay(s);
     fill(catalogEl, h('div', { class: 'card-panel' },
       h('p', {}, c.loading ? 'Chargement du catalogue en cours…'
         : [[c.counts.movies, 'film'], [c.counts.series, 'série'], [c.counts.channels, 'chaîne']]
@@ -197,6 +200,46 @@ export function settings(ctx) {
       }),
     ));
     if (keep && document.activeElement === document.body) root.querySelector(`[data-fkey="${CSS.escape(keep)}"]`)?.focus({ preventScroll: true });
+  }
+
+  function paintRelay(s) {
+    const active = s.settings.relay;
+    const urlInput = relayEl.querySelector('input[name=relayUrl]') || h('input', { class: 'field', name: 'relayUrl', inputmode: 'url', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', dataset: { fkey: 'relay-url' }, 'aria-label': 'Adresse du relais', placeholder: 'https://seance-relais.votre-compte.workers.dev' });
+    const keyInput = relayEl.querySelector('input[name=relayKey]') || h('input', { class: 'field', name: 'relayKey', type: 'password', autocomplete: 'off', dataset: { fkey: 'relay-key' }, 'aria-label': 'Clé du relais', placeholder: 'Clé choisie lors de l\'installation du relais' });
+    const error = relayEl.querySelector('.error') || h('p', { class: 'error', role: 'alert' });
+    fill(relayEl, h('div', { class: 'card-panel' },
+      h('p', {}, active
+        ? `Relais actif : ${active}. Les échanges avec votre fournisseur passent par lui.`
+        : 'Facultatif. Si votre fournisseur ne répond pas depuis cette page (pas de HTTPS, ou connexions de sites web refusées), un relais fait l\'intermédiaire.'),
+      h('p', { class: 'hint' }, 'Le relais est un petit programme gratuit que vous installez sur votre propre compte Cloudflare, en quelques minutes. ',
+        h('a', { class: 'link', href: 'https://github.com/Lonjhe/Test-git/blob/claude/beautiful-maxwell-vvbats/relais/README.md', target: '_blank', rel: 'noopener noreferrer' }, 'Voir le guide d\'installation')),
+      h('div', { class: 'form-row' }, h('span', {}, 'Adresse du relais'), urlInput),
+      h('div', { class: 'form-row' }, h('span', {}, 'Clé'), keyInput),
+      error,
+      h('div', { class: 'inline', 'data-lane': true },
+        h('button', {
+          class: 'btn primary', type: 'button', dataset: { fkey: 'relay-save' },
+          onclick: async (e) => {
+            const btn = e.currentTarget;
+            error.textContent = '';
+            btn.disabled = true;
+            try {
+              await api.put('/api/settings', { relay: { url: urlInput.value, key: keyInput.value } });
+              urlInput.value = '';
+              keyInput.value = '';
+              toast('Relais enregistré');
+              await ctx.reloadApp('#/reglages');
+            } catch (err) {
+              btn.disabled = false;
+              error.textContent = err.message;
+            }
+          },
+        }, active ? 'Remplacer le relais' : 'Enregistrer le relais'),
+        active ? h('button', {
+          class: 'btn ghost', type: 'button', dataset: { fkey: 'relay-off' },
+          onclick: async () => { await api.put('/api/settings', { relay: null }); toast('Relais désactivé'); await ctx.reloadApp('#/reglages'); },
+        }, 'Désactiver') : null),
+    ));
   }
 
   paintForm();

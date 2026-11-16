@@ -16,8 +16,10 @@ const CONFIG_KEY = 'seance-config';
 export const STATE_KEY = 'seance-demo-state';
 
 const UNREACHABLE = 'Le navigateur n\'a pas pu joindre ce serveur. Depuis cette page en ligne, votre fournisseur doit être '
-  + 'accessible en HTTPS et accepter les connexions venant d\'un site web. Si l\'adresse est correcte, installez Séance chez vous : '
-  + 'son serveur fait l\'intermédiaire et lève ces limites.';
+  + 'accessible en HTTPS et accepter les connexions venant d\'un site web. Si l\'adresse est correcte, deux solutions : '
+  + 'configurer un relais (plus bas dans cette page, rubrique « Relais »), ou installer Séance chez vous.';
+const RELAY_FAILED = 'Le relais n\'a pas réussi à joindre votre fournisseur. Vérifiez l\'adresse du serveur ; '
+  + 'certains fournisseurs refusent aussi les connexions venant d\'un hébergeur.';
 
 class ApiError extends Error {}
 
@@ -85,11 +87,14 @@ function demoJson(path) {
   return demoFiles.get(path);
 }
 
-function friendly(err) {
-  if (err instanceof ApiError || err.refused) return err.message;
-  if (err.name === 'TimeoutError') return 'Le serveur IPTV ne répond pas.';
-  if (err.name === 'TypeError') return UNREACHABLE; // échec réseau, CORS ou contenu mixte : le navigateur ne les distingue pas
-  return err.message;
+/** Adresse normalisée d'un relais (sans paramètres), ou '' si elle est invalide. */
+function relayBase(url) {
+  try {
+    const u = new URL(String(url).trim());
+    return /^https?:$/.test(u.protocol) ? u.origin + u.pathname : '';
+  } catch {
+    return '';
+  }
 }
 
 const newId = () => Math.random().toString(36).slice(2, 8).padEnd(6, '0');
@@ -102,22 +107,42 @@ export async function createBackend() {
   };
   const secure = location.protocol === 'https:';
 
+  // Relais facultatif (relais/worker.js) : quand il est configuré, tout ce qui va
+  // chez le fournisseur passe par lui, ce qui lève les blocages du navigateur.
+  const relay = () => {
+    const r = config.data.settings.relay;
+    return r?.url && r?.key ? r : null;
+  };
+  const viaRelay = (r, url) => `${r.url}?k=${encodeURIComponent(r.key)}&u=${encodeURIComponent(url)}`;
+  const via = (url) => (relay() ? viaRelay(relay(), url) : url);
+  /** Une image en HTTP serait bloquée sur une page HTTPS : elle passe par le relais s'il existe. */
+  const img = (url) => (url && secure && relay() && /^http:/i.test(url) ? via(url) : url);
+  const xtream = (source) => new Xtream(source, { wrap: via });
+
+  function friendly(err) {
+    if (err instanceof ApiError || err.refused) return err.message;
+    if (err.name === 'TimeoutError') return 'Le serveur IPTV ne répond pas.';
+    if (relay()) return /\b(502|403|500)\b/.test(err.message) || err.name === 'TypeError' ? RELAY_FAILED : err.message;
+    if (err.name === 'TypeError') return UNREACHABLE; // échec réseau, CORS ou contenu mixte : le navigateur ne les distingue pas
+    return err.message;
+  }
+
   async function load(source, settings) {
     try {
-      if (source.type === 'xtream') return await xtreamData(new Xtream(source), settings);
+      if (source.type === 'xtream') return await xtreamData(xtream(source), settings);
       let text;
       if (source.file) {
         text = await idb.get(source.file);
         if (typeof text !== 'string') throw new ApiError('Le fichier importé n\'est plus disponible dans ce navigateur : importez-le de nouveau.');
       } else {
-        const res = await fetch(source.url, { signal: AbortSignal.timeout(180_000) });
+        const res = await fetch(via(source.url), { signal: AbortSignal.timeout(180_000) });
         if (!res.ok) throw new ApiError(`La playlist a répondu ${res.status}`);
         text = await res.text();
       }
       const data = m3uData(text);
       const all = [...data.channels, ...data.movies, ...data.series.flatMap((s) => s.episodes)];
-      if (secure && all.filter((e) => /^http:/i.test(e.url)).length > all.length / 2) {
-        data.warnings.push('les flux de cette playlist sont en HTTP : depuis cette page (HTTPS) le navigateur refusera de les lire. Installez Séance chez vous pour les regarder.');
+      if (secure && !relay() && all.filter((e) => /^http:/i.test(e.url)).length > all.length / 2) {
+        data.warnings.push('les flux de cette playlist sont en HTTP : depuis cette page (HTTPS) le navigateur refusera de les lire. Configurez un relais dans les réglages, ou installez Séance chez vous.');
       }
       return data;
     } catch (err) {
@@ -129,7 +154,7 @@ export async function createBackend() {
   const catalog = new Catalog({
     config,
     cache: persisted({ catalog: cachedCatalog ?? null }, (d) => (d.catalog ? idb.set('catalog', d.catalog) : idb.del('catalog'))),
-    xtream: (source) => new Xtream(source),
+    xtream,
     load,
   });
   const tmdb = new Tmdb(config, persisted(cachedTmdb ?? { matches: {}, genres: {} }, (d) => idb.set('tmdb', d)));
@@ -149,6 +174,7 @@ export async function createBackend() {
       tmdb: tmdb.enabled,
       showAdult: config.data.settings.showAdult === true,
       liveFormat: config.data.settings.liveFormat === 'ts' ? 'ts' : 'm3u8',
+      relay: relay() ? new URL(relay().url).host : '',
     };
     if (isDemo()) {
       const demo = await demoJson('api/status.json');
@@ -185,12 +211,13 @@ export async function createBackend() {
     if (x) {
       if (!x.url || !x.username || !x.password) throw new ApiError('Adresse, identifiant et mot de passe sont requis');
       let bases;
-      try { bases = directCandidates(x.url, location.protocol); } catch { throw new ApiError('Adresse du serveur invalide'); }
+      // Avec un relais, l'adresse est utilisée telle quelle (HTTP compris) ; sinon on tente ses variantes HTTPS.
+      try { bases = directCandidates(x.url, relay() ? 'http:' : location.protocol); } catch { throw new ApiError('Adresse du serveur invalide'); }
       let failure;
       for (const base of bases) {
         const candidate = { id: newId(), type: 'xtream', name: body.name?.trim() || new URL(base).hostname, url: base, username: x.username.trim(), password: x.password };
         try {
-          candidate.account = await new Xtream(candidate).account();
+          candidate.account = await xtream(candidate).account();
           source = candidate;
           break;
         } catch (err) {
@@ -252,6 +279,26 @@ export async function createBackend() {
         tmdb.stop();
       }
     }
+    if (body.relay !== undefined) {
+      if (body.relay === null) {
+        delete settings.relay;
+      } else {
+        const candidate = { url: relayBase(body.relay.url), key: String(body.relay.key || '').trim() };
+        if (!candidate.url || !candidate.key) throw new ApiError('Indiquez l\'adresse du relais et sa clé.');
+        if (secure && candidate.url.startsWith('http:')) throw new ApiError('Le relais doit être en HTTPS.');
+        let res;
+        try {
+          res = await fetch(`${candidate.url}?k=${encodeURIComponent(candidate.key)}&ping=1`, { signal: AbortSignal.timeout(15_000) });
+        } catch {
+          throw new ApiError('Relais injoignable : vérifiez son adresse.');
+        }
+        const reply = await res.json().catch(() => ({}));
+        if (res.status === 403) throw new ApiError('Le relais a refusé cette clé.');
+        if (!res.ok || reply.service !== 'seance-relais') throw new ApiError(reply.error || 'Cette adresse ne répond pas comme un relais Séance.');
+        settings.relay = candidate;
+      }
+      reload = true;
+    }
     if (typeof body.showAdult === 'boolean' && settings.showAdult !== body.showAdult) { settings.showAdult = body.showAdult; reload = true; }
     if (['ts', 'm3u8'].includes(body.liveFormat) && settings.liveFormat !== body.liveFormat) { settings.liveFormat = body.liveFormat; reload = true; }
     config.save();
@@ -267,12 +314,12 @@ export async function createBackend() {
     }
     const target = catalog.resolve(id);
     if (!target) throw new ApiError('Flux introuvable');
-    // Lecture directe : pas de relais, le navigateur s'adresse au fournisseur.
-    const out = { url: target.url, type: target.type, external: target.url, direct: true };
+    // Sans relais, la lecture est directe : le navigateur s'adresse au fournisseur.
+    const out = { url: via(target.url), type: target.type, external: target.url, direct: !relay() };
     const ref = catalog.split(id);
     if (ref?.kind === 'c' && ref.source?.type === 'xtream') {
       const other = target.type === 'hls' ? 'ts' : 'm3u8';
-      out.alt = { url: target.url.replace(/\.(m3u8|ts)$/i, `.${other}`), type: other === 'ts' ? 'mpegts' : 'hls' };
+      out.alt = { url: via(target.url.replace(/\.(m3u8|ts)$/i, `.${other}`)), type: other === 'ts' ? 'mpegts' : 'hls' };
     }
     return out;
   }
@@ -309,17 +356,27 @@ export async function createBackend() {
     if (method === 'GET') {
       if (path === '/api/status') return status();
       if (path === '/api/state') return { favorites: {}, progress: {}, ...readJson(STATE_KEY, {}) };
-      if (path === '/api/catalog') return isDemo() ? demoJson('api/catalog.json') : structuredClone(catalog.client());
+      if (path === '/api/catalog') {
+        if (isDemo()) return demoJson('api/catalog.json');
+        const c = structuredClone(catalog.client());
+        for (const m of c.movies) { m.poster = img(m.poster); m.backdrop = img(m.backdrop); }
+        for (const x of c.series) { x.poster = img(x.poster); x.backdrop = img(x.backdrop); }
+        for (const ch of c.channels) ch.logo = img(ch.logo);
+        return c;
+      }
       if (path.startsWith('/api/play/')) return play(arg('/api/play/'));
       if (path.startsWith('/api/movie/')) {
         const id = arg('/api/movie/');
-        return isDemo() ? demoJson(`api/movie/${id}.json`) : found(await movieDetail(catalog, tmdb, id), 'Film');
+        if (isDemo()) return demoJson(`api/movie/${id}.json`);
+        const d = found(await movieDetail(catalog, tmdb, id), 'Film');
+        return { ...d, poster: img(d.poster), backdrop: img(d.backdrop) };
       }
       if (path.startsWith('/api/series/')) {
         const id = arg('/api/series/');
         if (isDemo()) return demoJson(`api/series/${id}.json`);
         try {
-          return found(await seriesDetail(catalog, id), 'Série');
+          const d = found(await seriesDetail(catalog, id), 'Série');
+          return { ...d, poster: img(d.poster), backdrop: img(d.backdrop), episodes: d.episodes.map((e) => ({ ...e, image: img(e.image) })) };
         } catch (err) {
           throw new ApiError(err instanceof ApiError ? err.message : 'Le fournisseur n\'a pas renvoyé les épisodes.');
         }
