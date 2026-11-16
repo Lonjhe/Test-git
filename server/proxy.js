@@ -42,12 +42,17 @@ export function rewriteManifest(text, baseUrl, sign) {
 const MIME = { mp4: 'video/mp4', m4v: 'video/mp4', mkv: 'video/x-matroska', webm: 'video/webm', ts: 'video/mp2t', avi: 'video/x-msvideo', mov: 'video/quicktime' };
 const PASS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'last-modified', 'etag'];
 
-export async function proxyStream(req, res, upstream, signer) {
+/**
+ * opts.userAgent : nom de lecteur accepté par la source ;
+ * opts.tag : identifiant de la source, reporté sur les liens HLS pour garder ce nom.
+ */
+export async function proxyStream(req, res, upstream, signer, opts = {}) {
+  const sign = (u) => signer.sign(u) + (opts.tag ? `&src=${encodeURIComponent(opts.tag)}` : '');
   const controller = new AbortController();
   const abort = () => controller.abort();
   res.on('close', abort);
 
-  const headers = { 'User-Agent': USER_AGENT, Accept: '*/*' };
+  const headers = { 'User-Agent': opts.userAgent || USER_AGENT, Accept: '*/*' };
   if (req.headers.range) headers.Range = req.headers.range;
 
   let up;
@@ -67,7 +72,7 @@ export async function proxyStream(req, res, upstream, signer) {
 
   if (isManifest) {
     const text = await up.text();
-    const body = text.trimStart().startsWith('#EXTM3U') ? rewriteManifest(text, up.url || upstream, signer.sign) : text;
+    const body = text.trimStart().startsWith('#EXTM3U') ? rewriteManifest(text, up.url || upstream, sign) : text;
     res.writeHead(200, {
       'Content-Type': 'application/vnd.apple.mpegurl',
       'Cache-Control': 'no-store',

@@ -14,10 +14,12 @@ const VOD = [
 
 export function startMock() {
   const hits = { tmdbSearch: 0 };
+  const picky = { on: false }; // quand il est actif, seuls les lecteurs « VLC » sont acceptés
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://mock');
     const json = (body, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
     const q = url.searchParams;
+    if (picky.on && !url.pathname.startsWith('/3/') && !/VLC/.test(req.headers['user-agent'] || '')) { res.writeHead(512); return res.end('blocked'); }
 
     if (url.pathname === '/player_api.php') {
       if (q.get('username') !== 'demo' || q.get('password') !== 'secret') return json({ user_info: { auth: 0 } });
@@ -110,6 +112,6 @@ export function startMock() {
     res.end();
   });
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, hits, origin: `http://127.0.0.1:${server.address().port}` }));
+    server.listen(0, '127.0.0.1', () => resolve({ server, hits, picky, origin: `http://127.0.0.1:${server.address().port}` }));
   });
 }

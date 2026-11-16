@@ -148,11 +148,42 @@ export function player(ctx) {
     }
   }
 
+  /**
+   * Interroge le flux pour dire pourquoi la lecture a échoué : refus du
+   * fournisseur, ou vidéo bien reçue mais que le navigateur ne sait pas décoder.
+   */
+  async function diagnose() {
+    if (!info?.url) return '';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch(new URL(info.url, document.baseURI), { headers: { Range: 'bytes=0-1023' }, signal: controller.signal });
+      const type = (res.headers.get('content-type') || '').split(';')[0];
+      const text = /^text\/plain/.test(type) && !res.ok ? (await res.text()).slice(0, 200) : '';
+      controller.abort();
+      if (res.status === 502) return `Le flux est injoignable. ${text}`;
+      if (!res.ok) {
+        return `Votre fournisseur a refusé ce flux (réponse ${res.status}). Causes fréquentes : trop de connexions simultanées sur l'abonnement `
+          + '(fermez les autres lecteurs), abonnement expiré, ou contenu retiré.';
+      }
+      if (/^(text\/html|application\/json)/.test(type)) return 'Votre fournisseur a renvoyé une page au lieu d\'une vidéo : ce contenu n\'est sans doute plus disponible.';
+      const ext = (info.external || '').match(/\.([a-z0-9]{2,4})(?:$|\?)/i)?.[1]?.toUpperCase();
+      return `Le flux arrive correctement${ext ? ` (fichier ${ext})` : ''} : c'est ce navigateur qui ne sait pas le décoder. `
+        + 'Essayez Chrome si vous utilisez Safari, une autre version du film, ou ouvrez le lien dans VLC.';
+    } catch {
+      return '';
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   function fail(reason) {
     if (!ctx.alive) return;
     const next = attempts.shift();
     if (next) { attach(next); return; }
     teardown();
+    const verdict = h('p', { class: 'verdict' }, 'Recherche de la cause…');
+    diagnose().then((text) => { if (ctx.alive) verdict.textContent = text; });
     const versions = isMovie ? (known.versions || []).filter((v) => v.id !== playId) : [];
     fill(overlay, h('div', { class: 'p-error' },
       h('h2', {}, 'Lecture impossible'),
@@ -163,6 +194,7 @@ export function player(ctx) {
       info?.direct ? h('p', {}, location.protocol === 'https:' && /^http:/i.test(info.url)
         ? 'Ce flux n\'est proposé qu\'en HTTP : depuis cette page sécurisée (HTTPS), le navigateur refuse de le lire. Installez Séance chez vous pour le regarder.'
         : 'Depuis la version en ligne, le fournisseur doit autoriser la lecture directe par un site web. Si rien ne se lit, installez Séance chez vous : son serveur relaie les flux.') : null,
+      verdict,
       h('p', { class: 'fine' }, `Détail : ${reason}`),
       h('div', { class: 'actions', 'data-lane': true },
         h('button', { class: 'btn primary', type: 'button', 'data-autofocus': true, onclick: () => start() }, 'Réessayer'),

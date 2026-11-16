@@ -216,6 +216,29 @@ test('playlist M3U : chaînes, films et séries reconstituées ; lien get.php co
   assert.equal((await get('/api/status')).data.sources.at(-1).type, 'xtream');
 });
 
+test('un fournisseur qui filtre les lecteurs : Séance trouve le nom accepté et le garde pour les flux', async () => {
+  mock.picky.on = true;
+  try {
+    const r = await call('POST', '/api/sources', { type: 'xtream', url: mock.origin.replace('127.0.0.1', 'localhost'), username: 'demo', password: 'secret', name: 'Difficile' });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    const status = await settled();
+    assert.ok(!status.catalog.warnings.some((w) => w.startsWith('Difficile')), status.catalog.warnings.join(' | '));
+    const { data: cat } = await get('/api/catalog');
+    const movie = cat.movies.flatMap((m) => m.versions || [m]).find((v) => v.id.startsWith(`m-${r.data.id}-`));
+    const film = await fetch(`${base}/stream/${movie.id}`, { headers: { Range: 'bytes=0-9' } });
+    assert.equal(film.status, 206, 'le film passe avec le nom de lecteur mémorisé');
+    const channel = cat.channels.find((c) => c.id.startsWith(`c-${r.data.id}-`));
+    const manifest = await (await fetch(`${base}/stream/${channel.id}`)).text();
+    const seg = manifest.split('\n').find((l) => l.startsWith('/hls?'));
+    assert.match(seg, /&src=/);
+    assert.equal(await (await fetch(base + seg)).text(), 'SEGMENT-1', 'les segments HLS aussi');
+    const bad = await call('POST', '/api/sources', { type: 'xtream', url: mock.origin, username: 'demo', password: 'faux' });
+    assert.match(bad.data.error, /Identifiants refusés/);
+  } finally {
+    mock.picky.on = false;
+  }
+});
+
 test('fichiers statiques : pas de sortie du dossier public', async () => {
   assert.equal((await fetch(`${base}/`)).status, 200);
   assert.equal((await fetch(`${base}/shared/text.js`)).status, 200);

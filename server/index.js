@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { ROOT, DATA_DIR, config, userState, JsonFile, newId } from './store.js';
 import { Catalog } from './catalog.js';
 import { Tmdb } from './tmdb.js';
-import { Xtream, xtreamFromM3uUrl, normalizeBase } from './xtream.js';
+import { connect, userAgentFor, xtreamFromM3uUrl, normalizeBase } from './xtream.js';
 import { movieDetail, seriesDetail, epg } from './details.js';
 import { makeSigner, proxyStream } from './proxy.js';
 import { demoArt } from './demo.js';
@@ -150,7 +150,7 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
       try { base = normalizeBase(x.url); } catch { throw new HttpError(400, 'Adresse du serveur invalide'); }
       source = { id: newId(), type: 'xtream', name: body.name?.trim() || new URL(base).hostname, url: base, username: x.username.trim(), password: x.password };
       try {
-        source.account = await new Xtream(source).account();
+        source.account = await connect(source);
       } catch (err) {
         throw new HttpError(400, err.name === 'TimeoutError' ? 'Le serveur IPTV ne répond pas' : `Connexion impossible : ${err.cause?.code || err.message}`);
       }
@@ -339,13 +339,15 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
         let upstream = target.url;
         const fmt = url.searchParams.get('fmt');
         if (fmt === 'ts' || fmt === 'm3u8') upstream = upstream.replace(/\.(m3u8|ts)$/i, `.${fmt}`);
-        return await proxyStream(req, res, upstream, signer);
+        const source = catalog.split(id)?.source;
+        return await proxyStream(req, res, upstream, signer, { userAgent: userAgentFor(source), tag: source?.id });
       }
 
       if (p === '/hls') {
         const upstream = signer.verify(url.searchParams.get('u'), url.searchParams.get('s'));
         if (!upstream) throw new HttpError(403, 'Lien de flux invalide');
-        return await proxyStream(req, res, upstream, signer);
+        const source = catalog.source(url.searchParams.get('src') || '');
+        return await proxyStream(req, res, upstream, signer, { userAgent: userAgentFor(source), tag: source?.id });
       }
 
       const art = /^\/demo\/art\/(\d+)\.svg$/.exec(p);
