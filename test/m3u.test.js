@@ -45,3 +45,14 @@ test('un lien get.php est reconnu comme compte Xtream', () => {
     { url: 'http://tv.example:8080', username: 'bob', password: 's3cret' });
   assert.equal(xtreamFromM3uUrl('http://tv.example/playlist.m3u'), null);
 });
+
+test('depuis une page HTTPS, on essaie les variantes HTTPS du serveur', async () => {
+  const { directCandidates, b64 } = await import('../shared/xtream.js');
+  assert.deepEqual(directCandidates('http://tv.example:8080', 'https:'), ['https://tv.example:8080', 'https://tv.example']);
+  assert.deepEqual(directCandidates('tv.example', 'https:'), ['https://tv.example']);
+  assert.deepEqual(directCandidates('https://tv.example:443/', 'https:'), ['https://tv.example']);
+  assert.deepEqual(directCandidates('http://tv.example:8080/chemin', 'http:'), ['http://tv.example:8080']);
+  assert.throws(() => directCandidates('', 'https:'));
+  assert.equal(b64(Buffer.from('Journal télévisé').toString('base64')), 'Journal télévisé');
+  assert.equal(b64('%%%'), '');
+});

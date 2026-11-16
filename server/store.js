@@ -52,7 +52,3 @@ export const userState = new JsonFile('state.json', { favorites: {}, progress: {
 export function newId() {
   return crypto.randomBytes(3).toString('hex');
 }
-
-export function shortHash(s) {
-  return crypto.createHash('sha1').update(s).digest('base64url').slice(0, 10);
-}

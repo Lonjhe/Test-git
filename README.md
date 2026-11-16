@@ -5,10 +5,10 @@ rangées qui défilent, navigation à la télécommande. Séance se branche sur 
 abonnement (compte **Xtream Codes** ou playlist **M3U**) et range vos films, vos
 séries et vos chaînes pour qu'on s'y retrouve.
 
-**[Voir la démonstration en ligne](https://lonjhe.github.io/Test-git/)** — l'interface
-avec un catalogue fictif, sans rien installer. Pour y brancher votre abonnement, il
-faut installer Séance chez vous (voir ci-dessous) : c'est son serveur qui se connecte
-à votre fournisseur.
+**[Ouvrir Séance en ligne](https://lonjhe.github.io/Test-git/)** — sans rien
+installer. La page affiche un catalogue de démonstration ; dans **Réglages**, vous
+pouvez y brancher votre abonnement (voir « Version en ligne » plus bas pour ses
+limites).
 
 ![Accueil](docs/accueil.png)
 
@@ -117,6 +117,22 @@ flèche est pressée, elle repasse en mode télécommande.
 | `SEANCE_DATA` | `./data` | dossier des réglages, de l'état de lecture et des caches |
 | `SEANCE_USER_AGENT` | `Mozilla/5.0 (Seance IPTV Player)` | à changer si votre fournisseur filtre les lecteurs |
 
+## Version en ligne ou installation chez soi ?
+
+| | En ligne (GitHub Pages) | Installée chez vous (`npm start`) |
+| --- | --- | --- |
+| Installation | aucune | Node.js sur un ordinateur de la maison |
+| Qui se connecte au fournisseur | votre navigateur, directement | le serveur Séance, qui relaie les flux |
+| Fournisseurs compatibles | ceux accessibles en **HTTPS** et qui acceptent les appels venant d'un site web | tous |
+| Identifiants, favoris, reprises | conservés dans le navigateur de chaque appareil | conservés sur le serveur, partagés entre tous les écrans |
+
+La version en ligne n'a pas de serveur : les navigateurs interdisent à une page
+sécurisée (HTTPS) d'appeler une adresse en HTTP, et exigent que le site appelé
+l'autorise. Beaucoup de fournisseurs IPTV ne proposent que du HTTP ; dans ce cas la
+connexion ou la lecture échoue en ligne (Séance l'explique) et il faut passer par
+l'installation chez soi, qui n'a pas ces limites. Séance essaie d'elle-même la
+variante HTTPS de l'adresse que vous saisissez.
+
 ## Bon à savoir
 
 - **Formats.** C'est le navigateur qui décode la vidéo. Le HLS, le MPEG-TS et les
@@ -144,20 +160,21 @@ npm run build:pages  # construit la démonstration statique dans dist/
 ```
 
 La démonstration en ligne est publiée par GitHub Actions
-(`.github/workflows/pages.yml`) à chaque envoi sur la branche principale. Elle
-n'embarque que le catalogue fictif : un site statique ne peut pas relayer les flux
-d'un fournisseur IPTV.
+(`.github/workflows/pages.yml`) à chaque envoi sur la branche principale. Sans
+serveur, c'est `public/js/local.js` qui répond aux routes de l'API dans le
+navigateur, en réutilisant le code de `shared/`.
 
 ```
-server/     serveur Node sans framework : API, catalogue, relais des flux
+server/     serveur Node sans framework : API, relais des flux, cache sur disque
+  proxy.js     relais vidéo + réécriture HLS         demo.js  catalogue de démonstration
+shared/     logique commune au serveur et au navigateur
   catalog.js   sources → catalogue unifié (titres, versions, genres)
   xtream.js    client de l'API Xtream Codes          m3u.js   lecture des playlists
-  tmdb.js      enrichissement TMDB                   proxy.js relais vidéo + réécriture HLS
-  demo.js      catalogue et affiches de démonstration
-shared/     code commun au serveur et à l'interface
+  tmdb.js      enrichissement TMDB                   details.js  fiches film / série, programme TV
   text.js      nettoyage des titres, genres          recommend.js  moteur « même style »
 public/     interface (JavaScript natif, sans étape de build)
   js/focus.js  navigation à la télécommande          js/views/     un fichier par écran
+  js/local.js  « serveur » embarqué de la version en ligne
 scripts/    construction de la démonstration statique (GitHub Pages)
 test/       tests (node --test)
 ```

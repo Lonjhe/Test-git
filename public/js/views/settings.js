@@ -1,6 +1,6 @@
 // Réglages : sources IPTV, catalogue, enrichissement TMDB, options.
 import { h, icon, toast, fill } from '../dom.js';
-import { api, isStatic, clearDemoState } from '../api.js';
+import { api, isStatic, clearLocalState } from '../api.js';
 import { store, loadStatus } from '../store.js';
 
 const TYPES = [
@@ -9,32 +9,11 @@ const TYPES = [
   { value: 'demo', label: 'Démonstration', hint: 'Un catalogue fictif pour découvrir l\'interface, sans abonnement.' },
 ];
 
-/** Page affichée dans la démonstration en ligne, qui n'a pas de serveur donc pas de sources à régler. */
-function demoNotice(ctx) {
-  const c = store.status.catalog.counts;
-  return h('div', { class: 'settings page' },
-    h('h1', {}, 'Démonstration en ligne'),
-    h('section', {}, h('div', { class: 'card-panel' },
-      h('p', {}, 'Cette page présente l\'interface de Séance avec un catalogue fictif : '
-        + `${c.movies} films, ${c.series} séries et ${c.channels} chaînes qui lisent tous le même clip de test.`),
-      h('p', { class: 'hint' }, 'Pour y retrouver votre abonnement (compte Xtream Codes ou playlist M3U), installez Séance sur un ordinateur de la maison : '
-        + 'c\'est son serveur qui se connecte à votre fournisseur et relaie les flux vers vos écrans.'),
-      h('a', { class: 'btn primary', href: 'https://github.com/Lonjhe/Test-git#démarrer', target: '_blank', rel: 'noopener noreferrer', 'data-autofocus': true }, 'Installer Séance chez moi'),
-    )),
-    h('section', {}, h('h2', {}, 'Vos essais'), h('div', { class: 'card-panel' },
-      h('p', { class: 'hint' }, 'Votre liste et vos lectures en cours sont conservées dans ce navigateur uniquement.'),
-      h('button', {
-        class: 'btn', type: 'button', dataset: { fkey: 'reset' },
-        onclick: async () => { clearDemoState(); toast('Liste et lectures effacées'); await ctx.reloadApp('#/reglages'); },
-      }, 'Tout effacer'),
-    )),
-  );
-}
-
 export function settings(ctx) {
-  if (isStatic) return demoNotice(ctx);
   const root = h('div', { class: 'settings page' });
   const welcome = !store.status?.configured;
+  // En ligne, la démonstration est affichée tant qu'aucune source n'est ajoutée : pas de type « Démonstration ».
+  const types = isStatic ? TYPES.filter((t) => t.value !== 'demo') : TYPES;
   let type = 'xtream';
   let busy = false;
 
@@ -48,10 +27,24 @@ export function settings(ctx) {
     welcome
       ? h('div', { class: 'welcome' }, h('h1', {}, 'Bienvenue dans Séance'), h('p', { class: 'lead' }, 'Ajoutez votre source IPTV pour retrouver vos films, vos séries et vos chaînes dans une interface pensée pour le salon.'))
       : h('h1', {}, 'Réglages'),
+    isStatic ? h('section', {}, h('div', { class: 'card-panel notice' },
+      h('h3', {}, 'Version en ligne : votre navigateur se connecte directement à votre fournisseur'),
+      h('p', { class: 'hint' }, 'Vos identifiants et votre catalogue restent dans ce navigateur ; rien n\'est envoyé ailleurs qu\'à votre fournisseur. '
+        + 'Cela ne fonctionne que si celui-ci est accessible en HTTPS et accepte les connexions venant d\'un site web — ce n\'est pas le cas de tous.'),
+      h('p', { class: 'hint' }, 'Si la connexion ou la lecture échoue, installez Séance sur un ordinateur de la maison : son serveur fait l\'intermédiaire et fonctionne avec tous les fournisseurs.'),
+      h('a', { class: 'btn', href: 'https://github.com/Lonjhe/Test-git#démarrer', target: '_blank', rel: 'noopener noreferrer', dataset: { fkey: 'install' } }, 'Installer Séance chez moi'),
+    )) : null,
     h('section', {}, welcome ? null : h('h2', {}, 'Sources'), sourcesEl, formEl),
     welcome ? null : h('section', {}, h('h2', {}, 'Catalogue'), catalogEl),
     welcome ? null : h('section', {}, h('h2', {}, 'Fiches et genres (TMDB)'), tmdbEl),
     welcome ? null : h('section', {}, h('h2', {}, 'Options'), optionsEl),
+    isStatic ? h('section', {}, h('h2', {}, 'Données de ce navigateur'), h('div', { class: 'card-panel' },
+      h('p', { class: 'hint' }, 'Votre liste et vos lectures en cours sont conservées dans ce navigateur uniquement.'),
+      h('button', {
+        class: 'btn', type: 'button', dataset: { fkey: 'reset' },
+        onclick: async () => { clearLocalState(); toast('Liste et lectures effacées'); await ctx.reloadApp('#/reglages'); },
+      }, 'Effacer ma liste et mes lectures'),
+    )) : null,
     h('p', { class: 'fine' }, 'Séance est un lecteur : il ne fournit aucun contenu. Utilisez-le avec un abonnement ou des playlists dont vous disposez légalement.'),
   );
 
@@ -77,12 +70,12 @@ export function settings(ctx) {
     const submit = h('button', { class: 'btn primary', type: 'submit', disabled: busy || null }, busy ? 'Connexion…' : type === 'demo' ? 'Lancer la démonstration' : 'Ajouter cette source');
     fill(formEl, 
       h('h3', {}, welcome ? 'Choisissez votre source' : 'Ajouter une source'),
-      h('div', { class: 'chips', 'data-lane': true }, TYPES.map((t) => h('button', {
+      h('div', { class: 'chips', 'data-lane': true }, types.map((t) => h('button', {
         class: `chip ${type === t.value ? 'on' : ''}`, type: 'button', dataset: { fkey: `type:${t.value}` },
         'data-autofocus': welcome && t.value === type ? true : null,
         onclick: () => { type = t.value; paintForm(); formEl.querySelector('.chip.on')?.focus({ preventScroll: true }); },
       }, t.label))),
-      h('p', { class: 'hint' }, TYPES.find((t) => t.value === type).hint),
+      h('p', { class: 'hint' }, types.find((t) => t.value === type).hint),
       ...fields,
       error,
       submit,
@@ -117,7 +110,7 @@ export function settings(ctx) {
   function paintStatus() {
     const s = store.status;
     if (!s) return;
-    fill(sourcesEl, ...s.sources.map((src) => {
+    fill(sourcesEl, s.demo ? h('p', { class: 'hint demo-note' }, 'Aucune source pour l\'instant : c\'est le catalogue de démonstration qui est affiché. Ajoutez votre abonnement ci-dessous pour le remplacer.') : null, ...s.sources.map((src) => {
       const a = src.account;
       const details = [
         { xtream: 'Xtream Codes', m3u: 'Playlist M3U', demo: 'Catalogue fictif' }[src.type],
@@ -148,12 +141,13 @@ export function settings(ctx) {
     const keep = document.activeElement?.dataset?.fkey;
     fill(catalogEl, h('div', { class: 'card-panel' },
       h('p', {}, c.loading ? 'Chargement du catalogue en cours…'
-        : `${c.counts.movies.toLocaleString('fr-FR')} films · ${c.counts.series.toLocaleString('fr-FR')} séries · ${c.counts.channels.toLocaleString('fr-FR')} chaînes`),
-      c.updatedAt ? h('p', { class: 'hint' }, `Dernière mise à jour : ${new Date(c.updatedAt).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}. Le catalogue se rafraîchit seul toutes les 12 heures.`) : null,
+        : [[c.counts.movies, 'film'], [c.counts.series, 'série'], [c.counts.channels, 'chaîne']]
+          .map(([n, word]) => `${n.toLocaleString('fr-FR')} ${word}${n > 1 ? 's' : ''}`).join(' · ')),
+      c.updatedAt ? h('p', { class: 'hint' }, `Dernière mise à jour : ${new Date(c.updatedAt).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}. ${s.demo ? 'Catalogue de démonstration.' : 'Le catalogue se rafraîchit seul toutes les 12 heures.'}`) : null,
       c.error ? h('p', { class: 'error' }, c.error) : null,
       ...c.warnings.map((w) => h('p', { class: 'error' }, w)),
       h('button', {
-        class: 'btn', type: 'button', disabled: c.loading || null, dataset: { fkey: 'refresh' },
+        class: 'btn', type: 'button', disabled: c.loading || s.demo || null, dataset: { fkey: 'refresh' },
         onclick: async () => { await api.post('/api/refresh'); toast('Actualisation lancée'); await ctx.reloadApp('#/reglages'); },
       }, 'Actualiser maintenant'),
     ));

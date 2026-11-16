@@ -159,6 +159,10 @@ export function player(ctx) {
       h('p', {}, isLive
         ? 'La chaîne ne répond pas ou son format n\'est pas pris en charge par ce navigateur.'
         : 'Le flux ne répond pas, ou ce navigateur ne sait pas lire ce format (certains fichiers MKV, HEVC ou au son AC3/DTS).'),
+      // Version en ligne : le navigateur s'adresse directement au fournisseur, sans relais.
+      info?.direct ? h('p', {}, location.protocol === 'https:' && /^http:/i.test(info.url)
+        ? 'Ce flux n\'est proposé qu\'en HTTP : depuis cette page sécurisée (HTTPS), le navigateur refuse de le lire. Installez Séance chez vous pour le regarder.'
+        : 'Depuis la version en ligne, le fournisseur doit autoriser la lecture directe par un site web. Si rien ne se lit, installez Séance chez vous : son serveur relaie les flux.') : null,
       h('p', { class: 'fine' }, `Détail : ${reason}`),
       h('div', { class: 'actions', 'data-lane': true },
         h('button', { class: 'btn primary', type: 'button', 'data-autofocus': true, onclick: () => start() }, 'Réessayer'),
