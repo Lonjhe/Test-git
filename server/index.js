@@ -12,6 +12,7 @@ import { connect, userAgentFor, xtreamFromM3uUrl, normalizeBase } from './xtream
 import { movieDetail, seriesDetail, epg } from './details.js';
 import { makeSigner, proxyStream } from './proxy.js';
 import { demoArt } from './demo.js';
+import { hasFfmpeg, probe, convert } from './convert.js';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
@@ -111,6 +112,8 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
   const enrich = () => tmdb.enrichAll(catalog).catch((err) => console.warn('[tmdb]', err.message));
   catalog.listeners.push(enrich);
 
+  const ffmpeg = await hasFfmpeg();
+
   const status = () => ({
     configured: catalog.sources.length > 0,
     sources: catalog.sources.map((s) => ({
@@ -121,6 +124,7 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
       tmdb: tmdb.enabled,
       showAdult: config.data.settings.showAdult === true,
       liveFormat: config.data.settings.liveFormat === 'ts' ? 'ts' : 'm3u8',
+      ffmpeg,
     },
     catalog: {
       version: catalog.version,
@@ -285,7 +289,23 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
         const other = target.type === 'hls' ? 'ts' : 'm3u8';
         out.alt = { url: `${out.url}?fmt=${other}`, type: other === 'ts' ? 'mpegts' : 'hls' };
       }
+      // Films et épisodes : conversion possible si ffmpeg est installé.
+      if (target.type === 'file') {
+        out.ffmpeg = ffmpeg;
+        if (ffmpeg) out.convert = `/convert/${encodeURIComponent(id)}`;
+      }
       return sendJson(res, 200, out);
+    }
+
+    if (p.startsWith('/api/probe/') && method === 'GET') {
+      const id = idOf('/api/probe/');
+      const target = catalog.resolve(id);
+      if (!target || !ffmpeg) throw new HttpError(404, 'Analyse indisponible');
+      try {
+        return sendJson(res, 200, await probe(target.url, userAgentFor(catalog.split(id)?.source)));
+      } catch (err) {
+        throw new HttpError(502, err.message);
+      }
     }
 
     if (p === '/api/state' && method === 'GET') return sendJson(res, 200, userState.data);
@@ -341,6 +361,13 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
         if (fmt === 'ts' || fmt === 'm3u8') upstream = upstream.replace(/\.(m3u8|ts)$/i, `.${fmt}`);
         const source = catalog.split(id)?.source;
         return await proxyStream(req, res, upstream, signer, { userAgent: userAgentFor(source), tag: source?.id });
+      }
+
+      if (p.startsWith('/convert/')) {
+        const id = decodeURIComponent(p.slice('/convert/'.length));
+        const target = catalog.resolve(id);
+        if (!target || !ffmpeg) throw new HttpError(404, 'Conversion indisponible');
+        return await convert(req, res, target.url, userAgentFor(catalog.split(id)?.source), Math.max(0, +url.searchParams.get('t') || 0));
       }
 
       if (p === '/hls') {

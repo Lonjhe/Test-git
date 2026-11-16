@@ -115,7 +115,8 @@ flèche est pressée, elle repasse en mode télécommande.
 | `PORT` | `8080` | port d'écoute |
 | `HOST` | `0.0.0.0` | `127.0.0.1` pour n'accepter que cet ordinateur |
 | `SEANCE_DATA` | `./data` | dossier des réglages, de l'état de lecture et des caches |
-| `SEANCE_USER_AGENT` | `Mozilla/5.0 (Seance IPTV Player)` | à changer si votre fournisseur filtre les lecteurs |
+| `SEANCE_USER_AGENT` | `Mozilla/5.0 (Seance IPTV Player)` | nom sous lequel Séance se présente ; si un fournisseur le refuse, elle essaie d'elle-même ceux de lecteurs courants |
+| `SEANCE_FFMPEG` | `ffmpeg` | chemin de ffmpeg s'il n'est pas dans le PATH |
 
 ## Version en ligne ou installation chez soi ?
 
@@ -141,10 +142,16 @@ Séance essaie d'elle-même la variante HTTPS de l'adresse que vous saisissez.
 
 ## Bon à savoir
 
-- **Formats.** C'est le navigateur qui décode la vidéo. Le HLS, le MPEG-TS et les
-  MP4 (H.264/AAC) passent partout ; certains MKV, le HEVC ou le son AC3/DTS dépendent
-  de l'appareil. En cas d'échec, le lecteur propose d'essayer une autre version ou
-  de copier le lien du flux pour l'ouvrir dans VLC. Séance ne transcode pas.
+- **Formats et conversion.** C'est le navigateur qui décode la vidéo. Le HLS, le
+  MPEG-TS et les MP4 (H.264/AAC) passent partout ; beaucoup de films IPTV sont en
+  MKV ou avec un son AC3/DTS, que les navigateurs ne lisent pas. Si
+  [ffmpeg](https://ffmpeg.org) est installé sur l'ordinateur qui fait tourner
+  Séance, elle convertit ces vidéos à la volée, sans réglage : quand la lecture
+  échoue (ou démarre sans le son), elle bascule d'elle-même sur la version
+  convertie. Sur Mac : `brew install ffmpeg` ([Homebrew](https://brew.sh)) ; sur
+  Windows : `winget install ffmpeg` ; sur Linux : `sudo apt install ffmpeg`. Sans
+  ffmpeg, le lecteur propose d'essayer une autre version ou de copier le lien pour
+  VLC. La conversion n'existe pas dans la version en ligne.
 - **Navigateur.** Il faut un navigateur récent (modules JavaScript). Les téléviseurs
   d'avant 2020 environ ont souvent un navigateur trop ancien : passez alors par un
   boîtier (Android TV, Fire TV…) ou un ordinateur branché en HDMI.
@@ -173,6 +180,7 @@ navigateur, en réutilisant le code de `shared/`.
 ```
 server/     serveur Node sans framework : API, relais des flux, cache sur disque
   proxy.js     relais vidéo + réécriture HLS         demo.js  catalogue de démonstration
+  convert.js   conversion à la volée (ffmpeg)
 shared/     logique commune au serveur et au navigateur
   catalog.js   sources → catalogue unifié (titres, versions, genres)
   xtream.js    client de l'API Xtream Codes          m3u.js   lecture des playlists

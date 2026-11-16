@@ -4,7 +4,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { startMock, VIDEO } from './mock-provider.js';
+
+let ffmpegInstalled = true;
+try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }); execFileSync('ffprobe', ['-version'], { stdio: 'ignore' }); } catch { ffmpegInstalled = false; }
 
 let mock;
 let app;
@@ -246,4 +250,29 @@ test('fichiers statiques : pas de sortie du dossier public', async () => {
   const res = await fetch(`${base}/%2e%2e/package.json`);
   assert.notEqual(res.status, 200);
   assert.equal((await fetch(`${base}/..%2Fdata%2Fconfig.json`)).status, 403);
+});
+
+test('conversion à la volée avec ffmpeg', { skip: !ffmpegInstalled && 'ffmpeg absent' }, async () => {
+  assert.equal((await call('POST', '/api/sources', { type: 'demo' })).status, 200);
+  await settled();
+  const { data: cat } = await get('/api/catalog');
+  const film = cat.movies.find((m) => m.id.startsWith('m-demo-'));
+  const { data: play } = await get(`/api/play/${film.id}`);
+  assert.equal(play.ffmpeg, true);
+  assert.equal(play.convert, `/convert/${film.id}`);
+  const { data: info } = await get(`/api/probe/${film.id}`);
+  assert.equal(info.duration, 40);
+  assert.equal(info.video, 'h264');
+
+  const res = await fetch(`${base}${play.convert}?t=10`);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'video/mp4');
+  const bytes = Buffer.from(await res.arrayBuffer());
+  assert.equal(bytes.subarray(4, 8).toString(), 'ftyp', 'le résultat est bien un MP4');
+  assert.ok(bytes.includes(Buffer.from('moof')), 'MP4 fragmenté, lisible au fil de l\'eau');
+  assert.ok(bytes.length > 50_000);
+
+  const channel = cat.channels.find((c) => c.id.startsWith('c-demo-'));
+  assert.equal((await get(`/api/play/${channel.id}`)).data.convert, undefined, 'pas de conversion pour le direct');
+  assert.equal((await fetch(`${base}/convert/m-xx-1`)).status, 404);
 });

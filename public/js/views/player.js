@@ -96,7 +96,27 @@ export function player(ctx) {
     const p = store.progress[known.id];
     startAt = p && !p.done && p.pos > 20 ? p.pos : 0;
   }
-  const duration = () => (Number.isFinite(video.duration) ? video.duration : 0);
+  // Lecture convertie par le serveur (ffmpeg) : le flux reçu commence à `base`
+  // secondes du film et n'annonce pas sa durée, connue par ailleurs (`dur`).
+  let conv = null;
+  let lastPos = 0;
+  const duration = () => (conv ? conv.dur : Number.isFinite(video.duration) ? video.duration : 0);
+  const now = () => (conv ? conv.base : 0) + (video.currentTime || 0);
+
+  function playConverted(at) {
+    const dur = conv?.dur || 0;
+    hls?.destroy();
+    hls = null;
+    conv = { base: Math.max(0, Math.floor(at)), dur };
+    fill(overlay, h('div', { class: 'spin' }));
+    video.src = new URL(`${info.convert}?t=${conv.base}`, document.baseURI).href;
+    video.play().catch(() => paintPlay());
+    if (!dur) {
+      api.get(`/api/probe/${encodeURIComponent(playId)}`).then((d) => {
+        if (ctx.alive && conv) { conv.dur = d.duration || 0; paintTime(); }
+      }).catch(() => {});
+    }
+  }
 
   // ——— Chargement du flux, avec solutions de repli ———
   function teardown() {
@@ -139,6 +159,10 @@ export function player(ctx) {
         mts.on(window.mpegts.Events.ERROR, (kind, detail) => fail(String(detail || kind)));
         mts.attachMediaElement(video);
         mts.load();
+      } else if (type === 'convert') {
+        toast('Format non pris en charge par le navigateur : conversion en cours…');
+        playConverted(lastPos || startAt);
+        return;
       } else {
         video.src = url;
       }
@@ -169,7 +193,9 @@ export function player(ctx) {
       if (/^(text\/html|application\/json)/.test(type)) return 'Votre fournisseur a renvoyé une page au lieu d\'une vidéo : ce contenu n\'est sans doute plus disponible.';
       const ext = (info.external || '').match(/\.([a-z0-9]{2,4})(?:$|\?)/i)?.[1]?.toUpperCase();
       return `Le flux arrive correctement${ext ? ` (fichier ${ext})` : ''} : c'est ce navigateur qui ne sait pas le décoder. `
-        + 'Essayez Chrome si vous utilisez Safari, une autre version du film, ou ouvrez le lien dans VLC.';
+        + (info.ffmpeg === false
+          ? 'Installez ffmpeg sur l\'ordinateur qui fait tourner Séance (voir le README) : elle convertira alors ces vidéos automatiquement.'
+          : 'Essayez Chrome si vous utilisez Safari, une autre version du film, ou ouvrez le lien dans VLC.');
     } catch {
       return '';
     } finally {
@@ -221,7 +247,8 @@ export function player(ctx) {
       return;
     }
     if (!ctx.alive) return;
-    attempts = [info.alt, info.type !== 'file' ? { url: info.url, type: 'file' } : null].filter(Boolean);
+    attempts = [info.alt, info.type !== 'file' ? { url: info.url, type: 'file' } : null, info.convert ? { type: 'convert' } : null].filter(Boolean);
+    conv = null;
     attach(info);
   }
 
@@ -233,10 +260,12 @@ export function player(ctx) {
   function seekTo(t) {
     const d = duration();
     if (!d) return;
-    video.currentTime = Math.min(Math.max(0, t), Math.max(0, d - 0.5));
+    const target = Math.min(Math.max(0, t), Math.max(0, d - 0.5));
+    if (conv) playConverted(target); // la conversion repart de la position demandée
+    else video.currentTime = target;
     paintTime();
   }
-  const seekBy = (delta) => { if (!isLive) seekTo(video.currentTime + delta); };
+  const seekBy = (delta) => { if (!isLive) seekTo(now() + delta); };
   function fullscreen() {
     if (document.fullscreenElement) document.exitFullscreen?.();
     else root.requestFullscreen?.().catch(() => {});
@@ -249,7 +278,8 @@ export function player(ctx) {
   function paintTime() {
     if (isLive) return;
     const d = duration();
-    const t = video.currentTime || 0;
+    const t = now();
+    if (t > 1) lastPos = t;
     elapsed.textContent = fmtClock(t);
     remaining.textContent = d ? `-${fmtClock(d - t)}` : '';
     const pct = d ? (t / d) * 100 : 0;
@@ -258,7 +288,7 @@ export function player(ctx) {
     scrub.setAttribute('aria-valuemax', String(Math.round(d)));
     scrub.setAttribute('aria-valuenow', String(Math.round(t)));
     scrub.setAttribute('aria-valuetext', `${fmtClock(t)} sur ${fmtClock(d)}`);
-    if (d && video.buffered.length) buffered.style.width = `${(video.buffered.end(video.buffered.length - 1) / d) * 100}%`;
+    if (d && video.buffered.length) buffered.style.width = `${Math.min(100, (((conv ? conv.base : 0) + video.buffered.end(video.buffered.length - 1)) / d) * 100)}%`;
   }
 
   function wake(keep) {
@@ -309,7 +339,7 @@ export function player(ctx) {
   function save(done = false) {
     if (isLive) return;
     const d = duration();
-    const t = video.currentTime || 0;
+    const t = now();
     if (!d || (t < 5 && !done)) return;
     saveProgress({
       id: meta.key, pos: Math.floor(t), dur: Math.floor(d), done: done || t / d > 0.93,
@@ -342,11 +372,26 @@ export function player(ctx) {
 
   // ——— Événements ———
   video.addEventListener('loadedmetadata', () => {
-    if (startAt > 0 && !isLive && !hls && duration() > startAt + 15) video.currentTime = startAt;
+    if (startAt > 0 && !isLive && !hls && !conv && duration() > startAt + 15) video.currentTime = startAt;
     paintTime();
     paintTracksButton();
   });
   video.addEventListener('playing', () => { fill(overlay); paintPlay(); wake(); });
+  // Certains fichiers se lisent sans le son (AC3, DTS…) : après quelques secondes
+  // d'image sans aucun son décodé, on bascule sur la conversion.
+  let soundCheck;
+  video.addEventListener('playing', () => {
+    clearTimeout(soundCheck);
+    if (conv || hls || mts || !info?.convert || typeof video.webkitAudioDecodedByteCount !== 'number') return;
+    soundCheck = setTimeout(() => {
+      if (!ctx.alive || conv || video.paused || video.currentTime < 3) return;
+      if (video.webkitAudioDecodedByteCount === 0 && video.webkitVideoDecodedByteCount > 0) {
+        toast('Son non pris en charge par le navigateur : conversion en cours…');
+        playConverted(now());
+      }
+    }, 5000);
+  });
+  ctx.onCleanup(() => clearTimeout(soundCheck));
   video.addEventListener('waiting', () => { if (!overlay.firstChild) fill(overlay, h('div', { class: 'spin' })); });
   video.addEventListener('canplay', () => { if (overlay.querySelector(':scope > .spin')) fill(overlay); });
   video.addEventListener('play', () => { paintPlay(); wake(); });
