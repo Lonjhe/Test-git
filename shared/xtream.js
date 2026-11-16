@@ -53,7 +53,11 @@ export class Xtream {
     if (action) u.searchParams.set('action', action);
     for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
     const res = await fetch(this.wrap(u.href), { headers: this.headers, signal: AbortSignal.timeout(timeout) });
-    if (!res.ok) throw new Error(`Le serveur IPTV a répondu ${res.status}`);
+    if (!res.ok) {
+      // Un relais explique son échec dans un petit message JSON : on le conserve.
+      const detail = await res.json().then((d) => d?.error, () => undefined);
+      throw Object.assign(new Error(`Le serveur IPTV a répondu ${res.status}`), { status: res.status, detail });
+    }
     const text = await res.text();
     try {
       return JSON.parse(text);

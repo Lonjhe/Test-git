@@ -45,6 +45,26 @@ La clé empêche n'importe qui d'utiliser votre relais.
 
 Le relais se règle une fois par appareil : la clé est conservée dans le navigateur.
 
+## Si l'ajout de l'abonnement échoue encore
+
+Mettez d'abord le relais à jour : dans Cloudflare, ouvrez votre Worker, **Edit
+code**, remplacez tout le contenu par la dernière version de
+[`worker.js`](worker.js), puis **Deploy**. La clé et l'adresse ne changent pas.
+
+Séance affiche ensuite la cause précise :
+
+| Message | Ce que ça veut dire | Que faire |
+| --- | --- | --- |
+| Cloudflare refuse d'appeler cette adresse IP (erreur 1003) | Cloudflare interdit à un relais d'appeler un serveur désigné par des chiffres (`http://1.2.3.4:8080`). Le relais réessaie de lui-même avec un nom équivalent ; ce message signifie que cela n'a pas suffi. | Essayez l'autre adresse donnée par votre fournisseur, de préférence un nom de domaine. |
+| Cloudflare ne trouve pas ce serveur (erreur 1016) | Le nom du serveur n'est pas joignable depuis le réseau de Cloudflare. | Vérifiez l'orthographe de l'adresse ; essayez l'autre adresse. |
+| Votre fournisseur bloque / a refusé la connexion du relais | Le fournisseur n'accepte pas les connexions venant d'un hébergeur. | Aucun relais ne fonctionnera : installez Séance chez vous. |
+| Identifiants refusés | Le relais a bien joint le fournisseur. | Vérifiez l'identifiant et le mot de passe. |
+
+Quand le relais ne peut pas aboutir, [installer Séance chez
+vous](../README.md#démarrer) reste la solution qui fonctionne avec tous les
+fournisseurs : la connexion part alors de votre box, comme avec n'importe quelle
+application IPTV.
+
 ## Bon à savoir
 
 - **Quota gratuit.** Cloudflare accorde 100 000 requêtes par jour, remises à zéro à
@@ -60,6 +80,10 @@ Le relais se règle une fois par appareil : la clé est conservée dans le navig
 - **Confidentialité.** Vos identifiants et vos flux transitent par votre relais, sur
   votre compte Cloudflare ; ils ne passent par aucun serveur de Séance. Ne partagez
   ni l'adresse ni la clé.
+- **Adresses IP.** Pour un serveur désigné par une adresse IP, le relais passe par
+  le service public nip.io, qui fournit un nom de domaine équivalent
+  (`1.2.3.4.nip.io`). Ce service ne voit que l'adresse IP du serveur, jamais vos
+  identifiants ni vos flux.
 - **Mettre à jour ou supprimer.** Pour mettre à jour, recollez `worker.js` dans
   l'éditeur et redéployez. Pour tout arrêter, supprimez le Worker dans le tableau de
   bord Cloudflare, puis désactivez le relais dans les réglages de Séance.

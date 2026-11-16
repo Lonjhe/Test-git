@@ -18,7 +18,7 @@ test('le relais exige sa clé', async () => {
   assert.equal((await call(via(`${mock.origin}/playlist.m3u`, 'mauvaise'))).status, 403);
   const ok = await call('k=ma-cle&ping=1');
   assert.equal(ok.status, 200);
-  assert.deepEqual(await ok.json(), { ok: true, service: 'seance-relais' });
+  assert.deepEqual(await ok.json(), { ok: true, service: 'seance-relais', version: 2 });
   assert.equal(ok.headers.get('access-control-allow-origin'), '*');
 });
 
@@ -56,4 +56,45 @@ test('le relais réécrit les playlists HLS mais pas les playlists de chaînes',
   const channels = await (await call(via(`${mock.origin}/playlist.m3u`))).text();
   assert.match(channels, /#EXTINF:-1 tvg-id="a"/);
   assert.ok(!channels.includes('relais.example'), 'la liste de chaînes n\'est pas modifiée');
+});
+
+test('le relais contourne le refus des adresses IP et explique les refus de Cloudflare', async () => {
+  const real = globalThis.fetch;
+  const seen = [];
+  const cf = (status, code) => new Response(`error code: ${code}`, { status, headers: { 'Content-Type': 'text/plain; charset=UTF-8' } });
+  globalThis.fetch = async (href) => {
+    const u = new URL(href);
+    seen.push(u.host);
+    if (/^\d+(\.\d+){3}$/.test(u.hostname)) return cf(403, 1003); // Cloudflare refuse les adresses IP nues
+    if (u.hostname === '203.0.113.7.nip.io') return new Response('{"user_info":{"auth":1}}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (u.hostname === 'introuvable.example') return cf(530, 1016);
+    if (u.hostname === 'refus.example') return new Response('<html>Forbidden</html>', { status: 403, headers: { 'Content-Type': 'text/html' } });
+    return cf(403, 1003);
+  };
+  try {
+    const ok = await call(via('http://203.0.113.7:8080/player_api.php?username=a&password=b'));
+    assert.equal(ok.status, 200);
+    assert.equal((await ok.json()).user_info.auth, 1);
+    assert.deepEqual(seen, ['203.0.113.7:8080', '203.0.113.7.nip.io:8080'], 'essai direct, puis par nom de domaine');
+
+    seen.length = 0;
+    await call(via('http://203.0.113.7:8080/live/a/b/1.ts'));
+    assert.deepEqual(seen, ['203.0.113.7.nip.io:8080'], 'les appels suivants vont directement au nom qui fonctionne');
+
+    const dns = await call(via('http://introuvable.example/player_api.php'));
+    assert.equal(dns.status, 502);
+    const body = await dns.json();
+    assert.equal(body.cloudflare, 1016);
+    assert.match(body.error, /1016/);
+
+    const blocked = await call(via('http://198.51.100.9/player_api.php'));
+    assert.equal((await blocked.json()).cloudflare, 1003, 'si le nom de domaine échoue aussi, la cause est indiquée');
+
+    // Un refus qui vient du fournisseur lui-même est transmis tel quel.
+    const refused = await call(via('http://refus.example/player_api.php'));
+    assert.equal(refused.status, 403);
+    assert.match(await refused.text(), /Forbidden/);
+  } finally {
+    globalThis.fetch = real;
+  }
 });

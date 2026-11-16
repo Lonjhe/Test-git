@@ -18,8 +18,7 @@ export const STATE_KEY = 'seance-demo-state';
 const UNREACHABLE = 'Le navigateur n\'a pas pu joindre ce serveur. Depuis cette page en ligne, votre fournisseur doit être '
   + 'accessible en HTTPS et accepter les connexions venant d\'un site web. Si l\'adresse est correcte, deux solutions : '
   + 'configurer un relais (plus bas dans cette page, rubrique « Relais »), ou installer Séance chez vous.';
-const RELAY_FAILED = 'Le relais n\'a pas réussi à joindre votre fournisseur. Vérifiez l\'adresse du serveur ; '
-  + 'certains fournisseurs refusent aussi les connexions venant d\'un hébergeur.';
+const LAST_RESORT = ' Si votre fournisseur vous a donné une autre adresse, essayez-la ; sinon, seule l\'installation de Séance chez vous fonctionnera.';
 
 class ApiError extends Error {}
 
@@ -119,10 +118,25 @@ export async function createBackend() {
   const img = (url) => (url && secure && relay() && /^http:/i.test(url) ? via(url) : url);
   const xtream = (source) => new Xtream(source, { wrap: via });
 
+  /** Explique un échec survenu en passant par le relais. */
+  function relayFailure(err) {
+    if (err.name === 'TypeError') return 'Le relais est injoignable : vérifiez son adresse dans la rubrique « Relais ».';
+    if (err.detail) return err.detail + LAST_RESORT; // message rédigé par le relais lui-même
+    const status = err.status || 0;
+    if (status >= 520 && status <= 530) {
+      return `Cloudflare n'a pas pu atteindre ce serveur depuis le relais (erreur ${status}). Mettez à jour votre relais (recollez worker.js, voir le guide) : `
+        + 'la nouvelle version contourne certains de ces blocages et précise la cause.' + LAST_RESORT;
+    }
+    if (status === 401 || status === 403) return `Votre fournisseur a refusé la connexion du relais (réponse ${status}) : il n'accepte sans doute pas les connexions venant d'un hébergeur.` + LAST_RESORT;
+    if (status === 404) return 'Le relais a bien joint ce serveur, mais il ne répond pas comme un serveur Xtream (réponse 404). Vérifiez l\'adresse.';
+    if (status) return `Votre fournisseur a répondu ${status} au relais.` + LAST_RESORT;
+    return err.message;
+  }
+
   function friendly(err) {
     if (err instanceof ApiError || err.refused) return err.message;
     if (err.name === 'TimeoutError') return 'Le serveur IPTV ne répond pas.';
-    if (relay()) return /\b(502|403|500)\b/.test(err.message) || err.name === 'TypeError' ? RELAY_FAILED : err.message;
+    if (relay()) return relayFailure(err);
     if (err.name === 'TypeError') return UNREACHABLE; // échec réseau, CORS ou contenu mixte : le navigateur ne les distingue pas
     return err.message;
   }
@@ -136,7 +150,10 @@ export async function createBackend() {
         if (typeof text !== 'string') throw new ApiError('Le fichier importé n\'est plus disponible dans ce navigateur : importez-le de nouveau.');
       } else {
         const res = await fetch(via(source.url), { signal: AbortSignal.timeout(180_000) });
-        if (!res.ok) throw new ApiError(`La playlist a répondu ${res.status}`);
+        if (!res.ok) {
+          const detail = relay() ? await res.json().then((d) => d?.error, () => undefined) : undefined;
+          throw Object.assign(new Error(`La playlist a répondu ${res.status}`), { status: res.status, detail });
+        }
         text = await res.text();
       }
       const data = m3uData(text);
