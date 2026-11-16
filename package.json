@@ -1,0 +1,19 @@
+{
+  "name": "seance",
+  "version": "1.0.0",
+  "description": "Séance — lecteur IPTV personnel avec une interface façon salon (films, séries, TV en direct, recommandations)",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "hls.js": "^1.7.4",
+    "mpegts.js": "^1.8.2"
+  }
+}
