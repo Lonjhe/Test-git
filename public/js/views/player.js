@@ -9,7 +9,7 @@ const scripts = {};
 function loadScript(src) {
   return (scripts[src] ??= new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = src;
+    s.src = new URL(src, document.baseURI).href;
     s.onload = resolve;
     s.onerror = () => reject(new Error(`Chargement de ${src} impossible`));
     document.head.append(s);
@@ -116,7 +116,7 @@ export function player(ctx) {
         if (video.canPlayType('application/vnd.apple.mpegurl') && !window.MediaSource && !window.ManagedMediaSource) {
           video.src = url; // Safari / iOS lisent le HLS nativement
         } else {
-          await loadScript('/vendor/hls.min.js');
+          await loadScript('vendor/hls.min.js');
           if (!window.Hls?.isSupported()) throw new Error('HLS non pris en charge');
           let recovered = 0;
           hls = new window.Hls({ enableWorker: true, lowLatencyMode: false, backBufferLength: 60, startPosition: startAt > 0 && !isLive ? startAt : -1 });
@@ -133,7 +133,7 @@ export function player(ctx) {
           hls.attachMedia(video);
         }
       } else if (type === 'mpegts') {
-        await loadScript('/vendor/mpegts.js');
+        await loadScript('vendor/mpegts.js');
         if (!window.mpegts?.isSupported()) throw new Error('MPEG-TS non pris en charge');
         mts = window.mpegts.createPlayer({ type: 'mpegts', isLive, url: new URL(url, location.href).href }, { enableWorker: false, liveBufferLatencyChasing: false });
         mts.on(window.mpegts.Events.ERROR, (kind, detail) => fail(String(detail || kind)));

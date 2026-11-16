@@ -1,7 +1,7 @@
 // État de l'application côté navigateur : catalogue, favoris, progression.
 import { api } from './api.js';
-import { buildIndex } from '/shared/recommend.js';
-import { fold } from '/shared/text.js';
+import { buildIndex } from '../shared/recommend.js';
+import { fold } from '../shared/text.js';
 
 export const store = {
   status: null,

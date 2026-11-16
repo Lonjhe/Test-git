@@ -2,7 +2,7 @@
 import { h, fill } from '../dom.js';
 import { store, search as find, genresOf } from '../store.js';
 import { posterCard, channelCard, empty } from '../components.js';
-import { fold } from '/shared/text.js';
+import { fold } from '../../shared/text.js';
 
 export function search(ctx) {
   const root = h('div', { class: 'search page' });

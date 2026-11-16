@@ -1,6 +1,6 @@
 // Réglages : sources IPTV, catalogue, enrichissement TMDB, options.
 import { h, icon, toast, fill } from '../dom.js';
-import { api } from '../api.js';
+import { api, isStatic, clearDemoState } from '../api.js';
 import { store, loadStatus } from '../store.js';
 
 const TYPES = [
@@ -9,7 +9,30 @@ const TYPES = [
   { value: 'demo', label: 'Démonstration', hint: 'Un catalogue fictif pour découvrir l\'interface, sans abonnement.' },
 ];
 
+/** Page affichée dans la démonstration en ligne, qui n'a pas de serveur donc pas de sources à régler. */
+function demoNotice(ctx) {
+  const c = store.status.catalog.counts;
+  return h('div', { class: 'settings page' },
+    h('h1', {}, 'Démonstration en ligne'),
+    h('section', {}, h('div', { class: 'card-panel' },
+      h('p', {}, 'Cette page présente l\'interface de Séance avec un catalogue fictif : '
+        + `${c.movies} films, ${c.series} séries et ${c.channels} chaînes qui lisent tous le même clip de test.`),
+      h('p', { class: 'hint' }, 'Pour y retrouver votre abonnement (compte Xtream Codes ou playlist M3U), installez Séance sur un ordinateur de la maison : '
+        + 'c\'est son serveur qui se connecte à votre fournisseur et relaie les flux vers vos écrans.'),
+      h('a', { class: 'btn primary', href: 'https://github.com/Lonjhe/Test-git#démarrer', target: '_blank', rel: 'noopener noreferrer', 'data-autofocus': true }, 'Installer Séance chez moi'),
+    )),
+    h('section', {}, h('h2', {}, 'Vos essais'), h('div', { class: 'card-panel' },
+      h('p', { class: 'hint' }, 'Votre liste et vos lectures en cours sont conservées dans ce navigateur uniquement.'),
+      h('button', {
+        class: 'btn', type: 'button', dataset: { fkey: 'reset' },
+        onclick: async () => { clearDemoState(); toast('Liste et lectures effacées'); await ctx.reloadApp('#/reglages'); },
+      }, 'Tout effacer'),
+    )),
+  );
+}
+
 export function settings(ctx) {
+  if (isStatic) return demoNotice(ctx);
   const root = h('div', { class: 'settings page' });
   const welcome = !store.status?.configured;
   let type = 'xtream';

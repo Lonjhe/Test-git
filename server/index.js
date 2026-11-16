@@ -142,7 +142,7 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
     let source;
     if (type === 'demo') {
       if (catalog.sources.some((s) => s.type === 'demo')) throw new HttpError(400, 'La démonstration est déjà ajoutée');
-      source = { id: newId(), type, name: 'Démonstration' };
+      source = { id: 'demo', type, name: 'Démonstration' };
     } else if (type === 'xtream' || (type === 'm3u' && body.url && xtreamFromM3uUrl(body.url))) {
       const x = type === 'xtream' ? body : xtreamFromM3uUrl(body.url);
       if (!x.url || !x.username || !x.password) throw new HttpError(400, 'Adresse, identifiant et mot de passe sont requis');

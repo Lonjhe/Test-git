@@ -5,6 +5,11 @@ rangées qui défilent, navigation à la télécommande. Séance se branche sur 
 abonnement (compte **Xtream Codes** ou playlist **M3U**) et range vos films, vos
 séries et vos chaînes pour qu'on s'y retrouve.
 
+**[Voir la démonstration en ligne](https://lonjhe.github.io/Test-git/)** — l'interface
+avec un catalogue fictif, sans rien installer. Pour y brancher votre abonnement, il
+faut installer Séance chez vous (voir ci-dessous) : c'est son serveur qui se connecte
+à votre fournisseur.
+
 ![Accueil](docs/accueil.png)
 
 | Fiche film et « Dans le même style » | Découvrir : l'outil de proposition |
@@ -133,9 +138,15 @@ flèche est pressée, elle repasse en mode télécommande.
 ## Développement
 
 ```bash
-npm run dev    # redémarre le serveur à chaque modification
-npm test       # tests unitaires + intégration face à un faux fournisseur
+npm run dev          # redémarre le serveur à chaque modification
+npm test             # tests unitaires + intégration face à un faux fournisseur
+npm run build:pages  # construit la démonstration statique dans dist/
 ```
+
+La démonstration en ligne est publiée par GitHub Actions
+(`.github/workflows/pages.yml`) à chaque envoi sur la branche principale. Elle
+n'embarque que le catalogue fictif : un site statique ne peut pas relayer les flux
+d'un fournisseur IPTV.
 
 ```
 server/     serveur Node sans framework : API, catalogue, relais des flux
@@ -147,6 +158,7 @@ shared/     code commun au serveur et à l'interface
   text.js      nettoyage des titres, genres          recommend.js  moteur « même style »
 public/     interface (JavaScript natif, sans étape de build)
   js/focus.js  navigation à la télécommande          js/views/     un fichier par écran
+scripts/    construction de la démonstration statique (GitHub Pages)
 test/       tests (node --test)
 ```
 

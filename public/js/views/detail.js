@@ -3,7 +3,7 @@ import { h, icon, fmtMinutes, toast, fill } from '../dom.js';
 import { api } from '../api.js';
 import { store, indexOf, isFav, toggleFav, watchedFraction, clearProgress } from '../store.js';
 import { posterRow, art, chips, empty, spinner, hue } from '../components.js';
-import { similarTo } from '/shared/recommend.js';
+import { similarTo } from '../../shared/recommend.js';
 
 function favButton(id) {
   const btn = h('button', { class: 'btn', type: 'button', dataset: { fkey: 'fav' } });

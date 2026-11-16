@@ -3,7 +3,7 @@ import { h, icon, fmtMinutes } from '../dom.js';
 import { api } from '../api.js';
 import { store, indexOf, genresOf, favorites, continueWatching, tasteSeeds } from '../store.js';
 import { posterRow, row, wideCard, channelCard, empty, hue } from '../components.js';
-import { similarTo, forYou } from '/shared/recommend.js';
+import { similarTo, forYou } from '../../shared/recommend.js';
 
 function pickFeatured() {
   const recent = store.movies.filter((m) => m.added && m.rating >= 6.5).sort((a, b) => b.added - a.added).slice(0, 40);

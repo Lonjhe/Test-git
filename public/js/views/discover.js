@@ -3,7 +3,7 @@
 import { h, icon, fill } from '../dom.js';
 import { store, indexOf, genresOf, tasteSeeds, search as find } from '../store.js';
 import { posterCard, chips, empty } from '../components.js';
-import { suggest, similarTo, forYou } from '/shared/recommend.js';
+import { suggest, similarTo, forYou } from '../../shared/recommend.js';
 
 const saved = { genres: [], decade: 0, minRating: 0, unseen: true, like: '' };
 
