@@ -92,6 +92,17 @@ Séance parcourt alors le catalogue en tâche de fond pour attribuer à chaque f
 vrais genres, un résumé en français, une image de fond et la distribution, et tient
 compte des recommandations de TMDB dans « Dans le même style ».
 
+## Applications Apple
+
+Séance existe aussi en **app iPhone, iPad, Mac et Apple TV** (dossier [`apple/`](apple/README.md)) : une
+fenêtre native pour l'interface web sur iPhone, iPad et Mac, et un client natif piloté à la télécommande
+Siri sur Apple TV. Elles se connectent au serveur Séance de votre réseau et se compilent avec Xcode ; le
+[guide](apple/README.md) détaille les étapes. Elles n'ont pas encore été compilées : voir ses réserves.
+
+Sans Xcode, iPhone, iPad et Mac peuvent simplement installer le site : **Partager → Sur l'écran d'accueil**
+dans Safari (Mac : **Fichier → Ajouter au Dock**). Pour lire les MKV sur Apple TV, iPhone et iPad, installez
+ffmpeg sur l'ordinateur du serveur : Séance convertit alors la vidéo en HLS à la volée.
+
 ## Télécommande et clavier
 
 | Touche | Action |
@@ -190,6 +201,7 @@ public/     interface (JavaScript natif, sans étape de build)
   js/focus.js  navigation à la télécommande          js/views/     un fichier par écran
   js/local.js  « serveur » embarqué de la version en ligne
 relais/     relais HTTPS pour la version en ligne (Cloudflare Worker) et son guide
+apple/      apps iPhone, iPad, Mac et Apple TV (projet Xcode via XcodeGen)
 scripts/    construction de la démonstration statique (GitHub Pages)
 test/       tests (node --test)
 ```

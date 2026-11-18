@@ -474,11 +474,11 @@ body[data-route="lecture"] { overflow: hidden; }
   .tab { flex: 1; flex-direction: column; gap: 2px; padding: .45em .2em; font-size: .62rem; min-width: 0; }
   .tab .icon { display: inline-flex; width: 1.5rem; height: 1.5rem; }
   .tab.icon-only span:not(.icon) { display: block; }
-  .page { padding-top: clamp(28px, 6vh, 60px); padding-bottom: 120px; }
+  .page { padding-top: calc(clamp(28px, 6vh, 60px) + env(safe-area-inset-top)); padding-bottom: calc(120px + env(safe-area-inset-bottom)); }
   .rows { padding-bottom: 120px; }
   #toast { bottom: 96px; }
   .hero { height: 76vh; min-height: 440px; }
-  .detail-head { flex-direction: column-reverse; align-items: flex-start; padding-top: 64px; min-height: 0; }
+  .detail-head { flex-direction: column-reverse; align-items: flex-start; padding-top: calc(64px + env(safe-area-inset-top)); min-height: 0; }
   .detail-poster { width: 38vw; align-self: flex-start; }
   .detail-bg { height: 80vh; }
   .filter { flex-direction: column; align-items: stretch; gap: .35rem; }

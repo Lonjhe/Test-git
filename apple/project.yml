@@ -1,0 +1,77 @@
+# Projet Xcode de Séance, généré avec XcodeGen : `xcodegen generate` (voir apple/README.md).
+name: Seance
+options:
+  bundleIdPrefix: com.example      # à remplacer par un identifiant qui vous est propre
+  createIntermediateGroups: true
+  developmentLanguage: fr
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""           # votre équipe Apple (choisie dans Xcode, onglet Signing & Capabilities)
+
+targets:
+  # iPhone, iPad et Mac : l'interface web de Séance dans une fenêtre native.
+  Seance:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - path: Shared
+      - path: App
+      - path: Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.seance
+        PRODUCT_NAME: Seance
+        IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Config/Seance.entitlements
+    info:
+      path: Config/App-Info.plist
+      properties:
+        CFBundleDisplayName: Séance
+        LSApplicationCategoryType: public.app-category.entertainment
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Le serveur Séance du réseau local est en HTTP : sans cette exception, iOS et macOS le refusent.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Séance se connecte à votre serveur Séance sur le réseau local.
+
+  # Apple TV : client natif (pas de vue web sur tvOS), commandé à la télécommande Siri.
+  SeanceTV:
+    type: application
+    platform: tvOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Shared
+      - path: TV
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.seance.tv
+        PRODUCT_NAME: SeanceTV
+        TARGETED_DEVICE_FAMILY: "3"
+    info:
+      path: Config/TV-Info.plist
+      properties:
+        CFBundleDisplayName: Séance
+        ITSAppUsesNonExemptEncryption: false
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Séance se connecte à votre serveur Séance sur le réseau local.

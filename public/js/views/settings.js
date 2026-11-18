@@ -47,6 +47,11 @@ export function settings(ctx) {
         onclick: async () => { clearLocalState(); toast('Liste et lectures effacées'); await ctx.reloadApp('#/reglages'); },
       }, 'Effacer ma liste et mes lectures'),
     )) : null,
+    // Dans l'app Apple (iPhone, iPad, Mac), la page peut demander à l'app de changer de serveur.
+    window.webkit?.messageHandlers?.seance ? h('section', {}, h('h2', {}, 'Application'), h('div', { class: 'card-panel' },
+      h('p', { class: 'hint' }, 'Cette application est connectée à un serveur Séance de votre réseau.'),
+      h('button', { class: 'btn', type: 'button', dataset: { fkey: 'change-server' }, onclick: () => window.webkit.messageHandlers.seance.postMessage('changeServer') }, 'Changer de serveur'),
+    )) : null,
     h('p', { class: 'fine' }, 'Séance est un lecteur : il ne fournit aucun contenu. Utilisez-le avec un abonnement ou des playlists dont vous disposez légalement.'),
   );
 

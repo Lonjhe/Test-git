@@ -276,3 +276,28 @@ test('conversion à la volée avec ffmpeg', { skip: !ffmpegInstalled && 'ffmpeg 
   assert.equal((await get(`/api/play/${channel.id}`)).data.convert, undefined, 'pas de conversion pour le direct');
   assert.equal((await fetch(`${base}/convert/m-xx-1`)).status, 404);
 });
+
+test('conversion HLS pour les appareils Apple', { skip: !ffmpegInstalled && 'ffmpeg absent' }, async () => {
+  const { data: cat } = await get('/api/catalog');
+  const film = cat.movies.find((m) => m.id.startsWith('m-demo-'));
+  const { data: play } = await get(`/api/play/${film.id}`);
+  assert.equal(play.convertHls, `/convert-hls/${film.id}`);
+  assert.equal(play.ext, 'mp4');
+
+  const res = await fetch(`${base}${play.convertHls}?t=5`); // suit la redirection vers la playlist
+  assert.equal(res.status, 200);
+  assert.match(res.url, /\/hls-conv\/[0-9a-f]{18}\/index\.m3u8$/);
+  const manifest = await res.text();
+  assert.match(manifest, /#EXT-X-MAP:URI="init\.mp4"/);
+  assert.ok((manifest.match(/#EXTINF/g) || []).length >= 2);
+  const segment = manifest.split('\n').find((l) => l.endsWith('.m4s'));
+  const dir = res.url.slice(0, res.url.lastIndexOf('/') + 1);
+  const init = await fetch(dir + 'init.mp4');
+  assert.equal(init.status, 200);
+  assert.equal(Buffer.from(await init.arrayBuffer()).subarray(4, 8).toString(), 'ftyp');
+  const seg = await fetch(dir + segment);
+  assert.equal(seg.status, 200);
+  assert.ok(Buffer.from(await seg.arrayBuffer()).includes(Buffer.from('moof')));
+  assert.equal((await fetch(dir + '..%2Fsecret.txt')).status, 404, 'pas de sortie du dossier de conversion');
+  assert.equal((await fetch(`${base}/hls-conv/inconnu/index.m3u8`)).status, 404);
+});

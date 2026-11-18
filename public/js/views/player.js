@@ -103,14 +103,37 @@ export function player(ctx) {
   const duration = () => (conv ? conv.dur : Number.isFinite(video.duration) ? video.duration : 0);
   const now = () => (conv ? conv.base : 0) + (video.currentTime || 0);
 
+  async function playConvertedHls(url) {
+    try {
+      if (video.canPlayType('application/vnd.apple.mpegurl') && !window.Hls) {
+        video.src = url;
+      } else {
+        await loadScript('vendor/hls.min.js');
+        hls = new window.Hls({ enableWorker: true, backBufferLength: 60 });
+        hls.on(window.Hls.Events.ERROR, (_, data) => { if (data.fatal) fail(data.details || 'erreur HLS'); });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+      }
+      video.play().catch(() => paintPlay());
+    } catch (err) {
+      fail(err.message);
+    }
+  }
+
   function playConverted(at) {
     const dur = conv?.dur || 0;
     hls?.destroy();
     hls = null;
     conv = { base: Math.max(0, Math.floor(at)), dur };
     fill(overlay, h('div', { class: 'spin' }));
-    video.src = new URL(`${info.convert}?t=${conv.base}`, document.baseURI).href;
-    video.play().catch(() => paintPlay());
+    // Safari, iPhone, iPad et les apps Apple lisent le HLS, pas un MP4 envoyé en continu.
+    const apple = /AppleWebKit/.test(navigator.userAgent) && !/Chrome|Chromium|Edg|Android/.test(navigator.userAgent);
+    if (info.convertHls && (apple || ctx.query.get('conv') === 'hls')) {
+      playConvertedHls(new URL(`${info.convertHls}?t=${conv.base}`, document.baseURI).href);
+    } else {
+      video.src = new URL(`${info.convert}?t=${conv.base}`, document.baseURI).href;
+      video.play().catch(() => paintPlay());
+    }
     if (!dur) {
       api.get(`/api/probe/${encodeURIComponent(playId)}`).then((d) => {
         if (ctx.alive && conv) { conv.dur = d.duration || 0; paintTime(); }

@@ -79,3 +79,97 @@ export async function convert(req, res, url, userAgent, start = 0) {
     }
   });
 }
+
+// ——— Conversion en HLS (iPhone, iPad, Mac, Apple TV) ———
+// Safari et AVPlayer ne lisent pas un MP4 fragmenté envoyé en flux continu, mais
+// lisent très bien le HLS : on découpe la conversion en petits segments sur disque.
+// Une « session » = une conversion en cours depuis une position donnée ; elle est
+// arrêtée et effacée quand plus personne ne la demande.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+
+const SESSIONS = new Map(); // identifiant -> { dir, child, last, ended, failed }
+const MAX_SESSIONS = 4;
+const IDLE_MS = 3 * 60_000;
+const ROOT = path.join(os.tmpdir(), `seance-hls-${process.pid}`);
+
+function drop(sid) {
+  const s = SESSIONS.get(sid);
+  if (!s) return;
+  SESSIONS.delete(sid);
+  try { s.child.kill('SIGKILL'); } catch { /* déjà arrêté */ }
+  fs.rm(s.dir, { recursive: true, force: true }, () => {});
+}
+
+const sweeper = setInterval(() => {
+  const limit = Date.now() - IDLE_MS;
+  for (const [sid, s] of SESSIONS) if (s.last < limit) drop(sid);
+}, 30_000);
+sweeper.unref();
+
+/** Arrête toutes les conversions (fermeture du serveur). */
+export function stopAllConversions() {
+  for (const sid of [...SESSIONS.keys()]) drop(sid);
+  fs.rmSync(ROOT, { recursive: true, force: true });
+}
+
+const segmentsReady = (dir) => {
+  try {
+    return (fs.readFileSync(path.join(dir, 'index.m3u8'), 'utf8').match(/#EXTINF/g) || []).length;
+  } catch {
+    return 0;
+  }
+};
+
+/** Lance une conversion HLS depuis `start` secondes ; renvoie son identifiant quand les premiers segments existent. */
+export async function startHls(url, userAgent, start = 0) {
+  const info = await probe(url, userAgent).catch(() => ({ video: '', audio: '' }));
+  while (SESSIONS.size >= MAX_SESSIONS) drop([...SESSIONS.entries()].sort((a, b) => a[1].last - b[1].last)[0][0]);
+
+  const sid = crypto.randomBytes(9).toString('hex');
+  const dir = path.join(ROOT, sid);
+  fs.mkdirSync(dir, { recursive: true });
+  const video = info.video === 'h264' ? ['-c:v', 'copy']
+    : info.video === 'hevc' ? ['-c:v', 'copy', '-tag:v', 'hvc1']
+      : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p'];
+  const args = [
+    '-hide_banner', '-loglevel', 'error', '-user_agent', userAgent,
+    '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+    ...(start > 0 ? ['-ss', String(start)] : []),
+    '-i', url,
+    '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn',
+    ...video,
+    '-c:a', 'aac', '-ac', '2', '-b:a', '160k',
+    // Segments fMP4 : seul format HLS qui accepte aussi le HEVC sur Apple TV et iPhone.
+    '-f', 'hls', '-hls_time', '4', '-hls_list_size', '0', '-hls_playlist_type', 'event',
+    '-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4',
+    '-hls_flags', 'independent_segments+temp_file',
+    '-hls_segment_filename', path.join(dir, 'seg%05d.m4s'), path.join(dir, 'index.m3u8'),
+  ];
+  const child = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  const session = { dir, child, last: Date.now(), ended: false, log: '' };
+  child.stderr.on('data', (d) => { session.log = (session.log + d).slice(-2000); });
+  child.on('close', () => { session.ended = true; });
+  child.on('error', () => { session.ended = true; session.log = 'ffmpeg indisponible'; });
+  SESSIONS.set(sid, session);
+
+  const deadline = Date.now() + 40_000;
+  while (Date.now() < deadline) {
+    if (segmentsReady(dir) >= 2 || (session.ended && segmentsReady(dir) >= 1)) return sid;
+    if (session.ended) break;
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  const reason = session.log.trim().split('\n').pop() || 'aucune image produite';
+  drop(sid);
+  throw new Error(`Conversion impossible : ${reason}`);
+}
+
+/** Fichier d'une conversion HLS (playlist, initialisation ou segment), ou null. */
+export function hlsFile(sid, name) {
+  const s = SESSIONS.get(sid);
+  if (!s || !/^[\w.-]+\.(m3u8|mp4|m4s)$/.test(name)) return null;
+  s.last = Date.now();
+  return path.join(s.dir, name);
+}

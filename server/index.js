@@ -12,13 +12,13 @@ import { connect, userAgentFor, xtreamFromM3uUrl, normalizeBase } from './xtream
 import { movieDetail, seriesDetail, epg } from './details.js';
 import { makeSigner, proxyStream } from './proxy.js';
 import { demoArt } from './demo.js';
-import { hasFfmpeg, probe, convert } from './convert.js';
+import { hasFfmpeg, probe, convert, startHls, hlsFile, stopAllConversions } from './convert.js';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json',
-  '.mp4': 'video/mp4', '.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2t', '.map': 'application/json',
+  '.mp4': 'video/mp4', '.m4s': 'video/iso.segment', '.m3u8': 'application/vnd.apple.mpegurl', '.ts': 'video/mp2t', '.map': 'application/json',
 };
 
 const STATIC = [
@@ -283,7 +283,7 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
       const id = idOf('/api/play/');
       const target = catalog.resolve(id);
       if (!target) throw new HttpError(404, 'Flux introuvable');
-      const out = { url: `/stream/${encodeURIComponent(id)}`, type: target.type, external: target.url };
+      const out = { url: `/stream/${encodeURIComponent(id)}`, type: target.type, external: target.url, ext: (/\.([a-z0-9]{2,4})(?:$|\?)/i.exec(new URL(target.url).pathname)?.[1] || '').toLowerCase() };
       const ref = catalog.split(id);
       if (ref?.kind === 'c' && ref.source?.type === 'xtream') {
         const other = target.type === 'hls' ? 'ts' : 'm3u8';
@@ -292,7 +292,10 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
       // Films et épisodes : conversion possible si ffmpeg est installé.
       if (target.type === 'file') {
         out.ffmpeg = ffmpeg;
-        if (ffmpeg) out.convert = `/convert/${encodeURIComponent(id)}`;
+        if (ffmpeg) {
+          out.convert = `/convert/${encodeURIComponent(id)}`;
+          out.convertHls = `/convert-hls/${encodeURIComponent(id)}`;
+        }
       }
       return sendJson(res, 200, out);
     }
@@ -370,6 +373,27 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
         return await convert(req, res, target.url, userAgentFor(catalog.split(id)?.source), Math.max(0, +url.searchParams.get('t') || 0));
       }
 
+      if (p.startsWith('/convert-hls/')) {
+        const id = decodeURIComponent(p.slice('/convert-hls/'.length));
+        const target = catalog.resolve(id);
+        if (!target || !ffmpeg) throw new HttpError(404, 'Conversion indisponible');
+        let sid;
+        try {
+          sid = await startHls(target.url, userAgentFor(catalog.split(id)?.source), Math.max(0, +url.searchParams.get('t') || 0));
+        } catch (err) {
+          throw new HttpError(502, err.message);
+        }
+        res.writeHead(302, { Location: `/hls-conv/${sid}/index.m3u8`, 'Cache-Control': 'no-store' });
+        return res.end();
+      }
+
+      if (p.startsWith('/hls-conv/')) {
+        const [, , sid, name] = p.split('/');
+        const file = hlsFile(sid, name || '');
+        if (!file) throw new HttpError(404, 'Segment introuvable');
+        return serveFile(req, res, file);
+      }
+
       if (p === '/hls') {
         const upstream = signer.verify(url.searchParams.get('u'), url.searchParams.get('s'));
         if (!upstream) throw new HttpError(403, 'Lien de flux invalide');
@@ -412,7 +436,7 @@ export async function startServer({ port = +process.env.PORT || 8080, host = pro
   else enrich();
   const timer = setInterval(() => { if (catalog.stale) catalog.refresh().catch(() => {}); }, 30 * 60e3);
   timer.unref();
-  server.on('close', () => { clearInterval(timer); tmdb.stop(); });
+  server.on('close', () => { clearInterval(timer); tmdb.stop(); stopAllConversions(); });
 
   return { server, port: listenPort, catalog, tmdb };
 }
@@ -436,6 +460,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   for (const sig of ['SIGINT', 'SIGTERM']) {
     process.on(sig, () => {
       for (const f of JsonFile.all) if (f.timer) f.flush();
+      stopAllConversions();
       process.exit(0);
     });
   }
